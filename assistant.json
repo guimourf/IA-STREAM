@@ -1,9 +1,8 @@
 {
-  "_readme": "Este arquivo define o assistente da API. Outros projetos não recebem o prompt: eles leem GET /v1/assistant, enviam context_fields em POST /v1/realtime/sessions e recebem um token efêmero. Edite prompt.* para papel, escopo, recusa, segurança, estilo e idioma. prompt.instructions, se preenchido, substitui esses blocos. A chave da OpenAI e o service_token ficam em config.json ou nas variáveis de ambiente. cors_origins lista origens de navegador que podem chamar a API; vazio significa só chamada servidor a servidor. guard.enabled liga a checagem extra de moderação e de tema.",
+  "_readme": "Exemplo de prompt. Copie este arquivo para o seu projeto e edite prompt.*. context_fields são os dados que a tela pede antes da conversa. A chave da OpenAI fica em config.json ou em OPENAI_API_KEY. guard.enabled liga a checagem extra de tema; o padrão é desligado.",
   "name": "Assistente",
-  "tagline": "Conversa por voz",
-  "privacy_notice": "O áudio desta conversa é enviado à OpenAI para gerar a resposta falada. Ao encerrar, apague a transcrição e os dados de contexto da sua interface.",
-  "cors_origins": [],
+  "tagline": "Exemplo de conversa em stream",
+  "privacy_notice": "O áudio desta conversa é enviado à OpenAI para gerar a resposta falada. Ao encerrar, a transcrição e os dados preenchidos saem desta tela.",
   "model": "gpt-realtime-2.1",
   "voice": "marin",
   "transcription_model": "gpt-4o-mini-transcribe",

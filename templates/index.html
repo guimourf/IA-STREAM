@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exemplo de conversa em stream</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div>
+          <p class="eyebrow">Exemplo para copiar</p>
+          <h1 id="assistant-name">Assistente</h1>
+          <p id="tagline" class="tagline"></p>
+        </div>
+        <p id="status" class="status" data-state="idle">Aguardando</p>
+      </header>
+
+      <section id="setup" class="panel">
+        <form id="context-form" autocomplete="off"></form>
+        <p id="privacy" class="privacy"></p>
+        <p id="form-error" class="error" role="alert" hidden></p>
+        <button id="start" class="primary" type="button">Iniciar conversa</button>
+      </section>
+
+      <section id="conversation" class="panel conversation" hidden>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+        <p id="live-error" class="error" role="alert" hidden></p>
+        <button id="stop" class="secondary" type="button">Encerrar conversa</button>
+      </section>
+    </main>
+    <audio id="remote-audio" autoplay></audio>
+    <script src="/static/js/voice.js"></script>
+  </body>
+</html>

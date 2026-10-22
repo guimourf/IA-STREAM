@@ -1,11 +1,19 @@
-import hmac
+"""Exemplo de conversa por voz em stream.
+
+O servidor só cria a sessão. O áudio vai e volta direto entre o navegador e a
+OpenAI, pelo WebRTC implementado em static/js/voice.js. Copie os dois lados
+para o projeto que for ter a conversa.
+"""
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from guard import evaluate_utterance
 from prompting import (
@@ -15,7 +23,6 @@ from prompting import (
     build_session_payload,
     load_assistant,
     load_openai_api_key,
-    load_service_token,
     normalize_context,
     public_assistant,
 )
@@ -56,23 +63,9 @@ def _load_api_key_or_http() -> str:
         ) from exc
 
 
-def require_service_auth(request: Request) -> None:
-    try:
-        expected = load_service_token(CONFIG_PATH)
-    except ConfigError as exc:
-        logger.error("config.json inválido: %s", exc)
-        raise HTTPException(status_code=500, detail="A configuração do serviço está inválida.") from exc
-    if not expected:
-        return
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
-        raise HTTPException(status_code=401, detail="Credencial do serviço inválida.")
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("Inicializando API IA-STREAM...")
+    logger.info("Exemplo de conversa IA-STREAM...")
     try:
         assistant = load_assistant(ASSISTANT_PATH)
         logger.info("Assistente carregado: %s. guarda=%s", assistant["name"], assistant["guard"]["enabled"])
@@ -82,77 +75,35 @@ async def lifespan(_app: FastAPI):
         load_openai_api_key(CONFIG_PATH)
         logger.info("Chave OpenAI carregada no backend.")
     except ConfigError as exc:
-        logger.warning("Sessões indisponíveis até configurar a chave: %s", exc)
-    try:
-        if load_service_token(CONFIG_PATH):
-            logger.info("Autenticação de serviço ativa nas rotas /v1.")
-        else:
-            logger.warning("SERVICE_TOKEN não definido. As rotas /v1 aceitam qualquer cliente.")
-    except ConfigError as exc:
-        logger.error("config.json inválido na subida: %s", exc)
+        logger.warning("A conversa fica indisponível até configurar a chave: %s", exc)
     yield
 
 
-app = FastAPI(
-    title="IA-STREAM",
-    version="1.0.0",
-    description=(
-        "API de sessão de voz para outros sistemas. "
-        "O prompt fica neste servidor. O cliente recebe um token efêmero e conversa direto com a OpenAI."
-    ),
-    lifespan=lifespan,
-)
-
-try:
-    _origins = load_assistant(ASSISTANT_PATH)["cors_origins"]
-except ConfigError:
-    _origins = []
-if _origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_origins,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Authorization", "Content-Type"],
-    )
-
-v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_service_auth)])
+app = FastAPI(title="IA-STREAM exemplo", lifespan=lifespan)
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request=request, name="index.html", context={})
 
 
-@app.get("/")
-async def root() -> dict:
-    return {
-        "service": "IA-STREAM",
-        "docs": "/docs",
-        "health": "/health",
-        "assistant": "/v1/assistant",
-        "sessions": "/v1/realtime/sessions",
-        "guard": "/v1/guard",
-    }
-
-
-@v1.get("/assistant")
-async def assistant_contract() -> dict:
-    """Campos de contexto e aviso de privacidade. Não inclui o prompt."""
+@app.get("/api/assistant")
+async def assistant_for_example() -> dict:
+    """Dados que a tela de exemplo precisa. O prompt continua só no servidor."""
     return public_assistant(_load_assistant_or_http())
 
 
-@v1.post("/realtime/sessions")
-async def create_realtime_session(request: Request) -> dict:
-    """Cria um token efêmero da Realtime API com o prompt deste servidor."""
-    logger.info("Solicitação recebida para criar sessão Realtime.")
+@app.post("/api/session")
+async def create_session(request: Request) -> dict:
+    """Cria o token da sessão. O stream de áudio começa depois, no voice.js."""
+    logger.info("Exemplo pediu uma sessão Realtime.")
     assistant = _load_assistant_or_http()
     try:
         body = await request.json()
     except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Dados inválidos. Envie o contexto em JSON.",
-        ) from exc
+        raise HTTPException(status_code=400, detail="Dados inválidos. Envie o contexto em JSON.") from exc
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Dados inválidos. Envie o contexto em JSON.")
 
@@ -167,14 +118,14 @@ async def create_realtime_session(request: Request) -> dict:
     instructions = build_instructions(assistant, context)
     payload = build_session_payload(assistant, instructions)
     api_key = _load_api_key_or_http()
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(OPENAI_CLIENT_SECRET_URL, headers=headers, json=payload)
+            response = await client.post(
+                OPENAI_CLIENT_SECRET_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
     except httpx.RequestError as exc:
         logger.exception("Erro de rede ao solicitar token efêmero.")
         raise HTTPException(
@@ -203,7 +154,6 @@ async def create_realtime_session(request: Request) -> dict:
     if expires_at is None and isinstance(data.get("client_secret"), dict):
         expires_at = data.get("client_secret", {}).get("expires_at")
     session = data.get("session") if isinstance(data.get("session"), dict) else {}
-    session_id = session.get("id")
 
     if not client_secret:
         logger.error("Resposta sem client_secret válido.")
@@ -213,28 +163,27 @@ async def create_realtime_session(request: Request) -> dict:
         )
 
     logger.info(
-        "Sessão criada. session_id=%s campos_de_contexto=%s guarda=%s",
-        session_id,
+        "Sessão de exemplo criada. session_id=%s campos_de_contexto=%s guarda=%s",
+        session.get("id"),
         len(context),
         assistant["guard"]["enabled"],
     )
     return {
         "client_secret": client_secret,
         "expires_at": expires_at,
-        "session_id": session_id,
+        "session_id": session.get("id"),
         "guard_enabled": assistant["guard"]["enabled"],
         "webrtc": {
             "url": WEBRTC_CALLS_URL,
-            "method": "POST",
             "content_type": "application/sdp",
             "data_channel": "oai-events",
         },
     }
 
 
-@v1.post("/guard")
+@app.post("/api/guard")
 async def guard_turn(request: Request) -> dict:
-    """Classifica uma transcrição quando guard.enabled está ligado."""
+    """Usado pelo exemplo só quando guard.enabled está ligado no assistant.json."""
     assistant = _load_assistant_or_http()
     if not assistant["guard"]["enabled"]:
         return {"allowed": True, "reason": None, "refusal_instructions": None}
@@ -246,6 +195,3 @@ async def guard_turn(request: Request) -> dict:
     if not isinstance(text, str):
         raise HTTPException(status_code=400, detail="Envie o texto da fala.")
     return await evaluate_utterance(assistant, text, _load_api_key_or_http())
-
-
-app.include_router(v1)

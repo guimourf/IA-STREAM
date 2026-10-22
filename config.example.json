@@ -1,6 +1,5 @@
 {
   "openai": {
     "api_key": "sk-coloque-a-chave-aqui"
-  },
-  "service_token": ""
+  }
 }

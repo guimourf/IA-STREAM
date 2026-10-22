@@ -73,21 +73,6 @@ def load_json(path: Path) -> dict:
     return data
 
 
-def load_service_token(path: Path) -> str:
-    env_token = os.environ.get("SERVICE_TOKEN", "").strip()
-    if env_token:
-        return env_token
-    if not path.exists():
-        return ""
-    data = load_json(path)
-    token = data.get("service_token", "")
-    if token is None:
-        return ""
-    if not isinstance(token, str):
-        raise ConfigError("service_token precisa ser texto.")
-    return token.strip()
-
-
 def load_openai_api_key(path: Path) -> str:
     env_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if env_key:
@@ -195,15 +180,6 @@ def load_assistant(path: Path) -> dict:
         if noise_reduction not in {"near_field", "far_field"}:
             raise ConfigError("noise_reduction precisa ser near_field, far_field ou vazio.")
 
-    origins_raw = raw.get("cors_origins") or []
-    if not isinstance(origins_raw, list):
-        raise ConfigError("cors_origins precisa ser uma lista de origens.")
-    cors_origins: list[str] = []
-    for origin in origins_raw:
-        if not isinstance(origin, str) or not origin.strip():
-            raise ConfigError("Cada item de cors_origins precisa ser uma origem.")
-        cors_origins.append(origin.strip())
-
     return {
         "name": _text(raw.get("name") or "Assistente", 80) or "Assistente",
         "tagline": _text(raw.get("tagline"), 160),
@@ -219,7 +195,6 @@ def load_assistant(path: Path) -> dict:
         "guard": guard,
         "prompt": prompt,
         "context_fields": fields,
-        "cors_origins": cors_origins,
     }
 
 
