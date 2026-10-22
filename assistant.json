@@ -1,7 +1,8 @@
 {
-  "_readme": "Exemplo de prompt. Copie este arquivo para o seu projeto e edite prompt.*. context_fields são os dados que a tela pede antes da conversa. A chave da OpenAI fica em config.json ou em OPENAI_API_KEY. guard.enabled liga a checagem extra de tema; o padrão é desligado.",
+  "_readme": "Prompt compartilhado pelos dois exemplos. Edite prompt.*. model e os campos de áudio valem para a pasta stream/. response_model vale para a pasta response/. context_fields são os dados pedidos antes da conversa. A chave fica em config.json ou em OPENAI_API_KEY.",
   "name": "Assistente",
-  "tagline": "Exemplo de conversa em stream",
+  "tagline": "Exemplos Stream e Response",
+  "response_model": "gpt-6-astra",
   "privacy_notice": "O áudio desta conversa é enviado à OpenAI para gerar a resposta falada. Ao encerrar, a transcrição e os dados preenchidos saem desta tela.",
   "model": "gpt-realtime-2.1",
   "voice": "marin",

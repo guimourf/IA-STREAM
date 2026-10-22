@@ -17,6 +17,11 @@ class FakeResponse:
 
 class FakeClient:
     last_json = None
+    payload = {
+        "value": "ek_test",
+        "expires_at": 123,
+        "session": {"id": "sess_test"},
+    }
 
     def __init__(self, *args, **kwargs) -> None:
         pass
@@ -29,10 +34,20 @@ class FakeClient:
 
     async def post(self, url, headers=None, json=None):
         FakeClient.last_json = json
-        return FakeResponse(
-            200,
-            {"value": "ek_test", "expires_at": 123, "session": {"id": "sess_test"}},
-        )
+        if url.endswith("/responses"):
+            return FakeResponse(
+                200,
+                {
+                    "id": "resp_test",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [{"type": "output_text", "text": "Olá, Ana."}],
+                        }
+                    ],
+                },
+            )
+        return FakeResponse(200, FakeClient.payload)
 
 
 @pytest.fixture(autouse=True)
@@ -42,26 +57,23 @@ def isolated_config(monkeypatch, tmp_path):
     FakeClient.last_json = None
 
 
-def test_example_page_hides_the_prompt_and_serves_the_stream_client():
+def test_example_page_offers_both_modes_without_the_prompt():
     client = TestClient(app_module.app)
     page = client.get("/")
-    script = client.get("/static/js/voice.js")
-    contract = client.get("/api/assistant")
+    stream_js = client.get("/stream/voice.js")
+    response_js = client.get("/response/chat.js")
 
     assert page.status_code == 200
-    assert "Iniciar conversa" in page.text
-    assert "voice.js" in page.text
+    assert 'data-mode="stream"' in page.text
+    assert 'data-mode="response"' in page.text
     assert "Substitua este bloco" not in page.text
-    assert script.status_code == 200
-    assert "response.output_audio_transcript.delta" in script.text
-    assert contract.status_code == 200
-    body = contract.json()
-    assert body["context_fields"][0]["key"] == "nome"
-    assert body["guard_enabled"] is False
-    assert "Substitua este bloco" not in json.dumps(body, ensure_ascii=False)
+    assert stream_js.status_code == 200
+    assert "response.output_audio_transcript.delta" in stream_js.text
+    assert response_js.status_code == 200
+    assert "/api/response" in response_js.text
 
 
-def test_session_validates_context_before_calling_openai(monkeypatch):
+def test_stream_session_validates_context_before_calling_openai(monkeypatch):
     monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
     client = TestClient(app_module.app)
 
@@ -75,21 +87,40 @@ def test_session_validates_context_before_calling_openai(monkeypatch):
     assert created.status_code == 200
     payload = created.json()
     assert payload["client_secret"] == "ek_test"
-    assert payload["guard_enabled"] is False
     assert payload["webrtc"]["data_channel"] == "oai-events"
     assert "nome = Ana" in FakeClient.last_json["session"]["instructions"]
     assert FakeClient.last_json["session"]["max_output_tokens"] == 300
 
 
-def test_guard_route_is_inert_while_disabled():
+def test_response_returns_the_whole_text(monkeypatch):
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     client = TestClient(app_module.app)
-    response = client.post("/api/guard", json={"text": "quem ganhou o jogo?"})
-    assert response.status_code == 200
-    assert response.json()["allowed"] is True
+
+    empty = client.post("/api/response", json={"context": {"nome": "Ana"}, "message": "  "})
+    assert empty.status_code == 400
+
+    created = client.post(
+        "/api/response",
+        json={
+            "context": {"nome": "Ana"},
+            "message": "Oi",
+            "history": [{"role": "user", "content": "Tudo bem?"}],
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["text"] == "Olá, Ana."
+    sent = FakeClient.last_json
+    assert sent["stream"] is False
+    assert sent["model"] == "gpt-6-astra"
+    assert sent["max_output_tokens"] == 300
+    assert sent["input"][-1] == {"role": "user", "content": "Oi"}
+    assert "nome = Ana" in sent["instructions"]
+    assert "Substitua este bloco" not in json.dumps(created.json(), ensure_ascii=False)
 
 
 def test_missing_key_is_a_controlled_error():
     client = TestClient(app_module.app)
-    response = client.post("/api/session", json={"context": {"nome": "Ana"}})
+    response = client.post("/api/response", json={"context": {"nome": "Ana"}, "message": "Oi"})
     assert response.status_code == 503
     assert "sk-" not in response.text

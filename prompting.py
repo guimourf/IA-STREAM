@@ -185,6 +185,7 @@ def load_assistant(path: Path) -> dict:
         "tagline": _text(raw.get("tagline"), 160),
         "privacy_notice": _text(raw.get("privacy_notice"), 600),
         "model": _text(raw.get("model") or "gpt-realtime-2.1", 64) or "gpt-realtime-2.1",
+        "response_model": _text(raw.get("response_model") or "gpt-6-astra", 64) or "gpt-6-astra",
         "voice": voice,
         "transcription_model": _text(raw.get("transcription_model") or "gpt-4o-mini-transcribe", 64)
         or "gpt-4o-mini-transcribe",

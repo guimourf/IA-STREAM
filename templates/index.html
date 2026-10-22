@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Exemplo de conversa em stream</title>
+    <title>Exemplos Stream e Response</title>
     <link rel="stylesheet" href="/static/css/app.css" />
   </head>
   <body>
@@ -17,20 +17,41 @@
         <p id="status" class="status" data-state="idle">Aguardando</p>
       </header>
 
-      <section id="setup" class="panel">
+      <section class="panel">
+        <div class="modes" role="tablist" aria-label="Formato da resposta">
+          <button type="button" data-mode="stream" aria-selected="true">Stream</button>
+          <button type="button" data-mode="response" aria-selected="false">Response</button>
+        </div>
+        <p id="mode-help" class="help"></p>
+      </section>
+
+      <section id="context-card" class="panel">
         <form id="context-form" autocomplete="off"></form>
         <p id="privacy" class="privacy"></p>
         <p id="form-error" class="error" role="alert" hidden></p>
-        <button id="start" class="primary" type="button">Iniciar conversa</button>
       </section>
 
-      <section id="conversation" class="panel conversation" hidden>
-        <div id="transcript" class="transcript" aria-live="polite"></div>
-        <p id="live-error" class="error" role="alert" hidden></p>
-        <button id="stop" class="secondary" type="button">Encerrar conversa</button>
+      <section id="panel-stream" class="panel">
+        <button id="start" class="primary" type="button">Iniciar conversa</button>
+        <div id="conversation" class="conversation" hidden>
+          <div id="transcript" class="transcript" aria-live="polite"></div>
+          <p id="live-error" class="error" role="alert" hidden></p>
+          <button id="stop" class="secondary" type="button">Encerrar conversa</button>
+        </div>
+      </section>
+
+      <section id="panel-response" class="panel" hidden>
+        <label for="response-message">Mensagem</label>
+        <textarea id="response-message" placeholder="Escreva a mensagem"></textarea>
+        <div id="response-thread" class="transcript" aria-live="polite"></div>
+        <p id="response-error" class="error" role="alert" hidden></p>
+        <button id="response-send" class="primary" type="button">Enviar</button>
+        <button id="response-clear" class="secondary" type="button">Limpar conversa</button>
       </section>
     </main>
     <audio id="remote-audio" autoplay></audio>
-    <script src="/static/js/voice.js"></script>
+    <script src="/static/js/shell.js"></script>
+    <script src="/stream/voice.js"></script>
+    <script src="/response/chat.js"></script>
   </body>
 </html>

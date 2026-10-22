@@ -1,8 +1,15 @@
 # IA-STREAM
 
-Exemplo de conversa por voz em stream para copiar em outro projeto. O áudio não passa por este servidor: ele cria a sessão e o navegador fala direto com a OpenAI.
+Exemplo para copiar em outro projeto. A mesma assistente pode responder de dois jeitos, e cada jeito está numa pasta.
 
-## Rodar o exemplo
+| Modo | O que acontece | Pasta |
+|---|---|---|
+| Stream | A voz e o texto chegam aos poucos, direto da OpenAI | [`stream/`](stream/README.md) |
+| Response | A mensagem vai ao servidor e o texto volta inteiro, num único JSON | [`response/`](response/README.md) |
+
+Na tela, os botões **Stream** e **Response** trocam o modo. O prompt é o mesmo.
+
+## Rodar
 
 ```bash
 python -m venv .venv
@@ -17,15 +24,14 @@ Coloque a chave em `config.json` (`openai.api_key`) ou na variável `OPENAI_API_
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Abra `http://127.0.0.1:8000`, preencha o nome e inicie a conversa. A resposta falada toca enquanto é gerada. O texto correspondente aparece em pedaços na tela.
+Abra `http://127.0.0.1:8000`.
 
-## O que copiar
+## O que os dois modos compartilham
 
-- `assistant.json`: o prompt. Edite `prompt.role`, `scope`, `out_of_scope`, `safety`, `style`, `language` e `extra`. Se preencher `prompt.instructions`, esse texto substitui os blocos. `context_fields` são os dados pedidos antes da conversa.
-- `prompting.py`: junta esses blocos, valida o contexto e monta a sessão, inclusive o `max_output_tokens`.
-- `app.py`: a rota `POST /api/session`, que troca a chave permanente por um token efêmero. A chave fica no servidor.
-- `static/js/voice.js`: o stream. Pede o token, abre o microfone, conecta o WebRTC e mostra a transcrição conforme os eventos `response.output_audio_transcript.delta` chegam.
+- `assistant.json`: o prompt em blocos (`role`, `scope`, `out_of_scope`, `safety`, `style`, `language`, `extra`). `prompt.instructions`, se preenchido, substitui os blocos. `context_fields` são os dados pedidos antes da conversa.
+- `prompting.py`: junta o prompt, valida o contexto e limita o tamanho com `max_output_tokens`.
+- `model` configura a voz do Stream. `response_model` configura o texto do Response.
 
-`guard.enabled` fica desligado. Ligado, a resposta automática para e o `voice.js` consulta `POST /api/guard` antes de pedir a fala.
+Troque o escopo de exemplo antes de usar o texto em público. Troque `response_model` se a conta não tiver o modelo que veio no arquivo.
 
-Troque o escopo de exemplo antes de usar o texto em público.
+O passo a passo de cada modo está no README da pasta correspondente.
