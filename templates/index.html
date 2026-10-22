@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exemplos Stream e Response</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div>
+          <p class="eyebrow">Exemplo para copiar</p>
+          <h1 id="assistant-name">Assistente</h1>
+          <p id="tagline" class="tagline"></p>
+        </div>
+        <p id="status" class="status" data-state="idle">Aguardando</p>
+      </header>
+
+      <section class="panel">
+        <div class="modes" role="tablist" aria-label="Formato da resposta">
+          <button type="button" data-mode="stream" aria-selected="true">Stream</button>
+          <button type="button" data-mode="response" aria-selected="false">Response</button>
+        </div>
+        <p id="mode-help" class="help"></p>
+      </section>
+
+      <section id="context-card" class="panel">
+        <form id="context-form" autocomplete="off"></form>
+        <p id="privacy" class="privacy"></p>
+        <p id="form-error" class="error" role="alert" hidden></p>
+      </section>
+
+      <section id="panel-stream" class="panel">
+        <button id="start" class="primary" type="button">Iniciar conversa</button>
+        <div id="conversation" class="conversation" hidden>
+          <div id="transcript" class="transcript" aria-live="polite"></div>
+          <p id="live-error" class="error" role="alert" hidden></p>
+          <button id="stop" class="secondary" type="button">Encerrar conversa</button>
+        </div>
+      </section>
+
+      <section id="panel-response" class="panel" hidden>
+        <label for="response-message">Mensagem</label>
+        <textarea id="response-message" placeholder="Escreva a mensagem"></textarea>
+        <div id="response-thread" class="transcript" aria-live="polite"></div>
+        <p id="response-error" class="error" role="alert" hidden></p>
+        <button id="response-send" class="primary" type="button">Enviar</button>
+        <button id="response-clear" class="secondary" type="button">Limpar conversa</button>
+      </section>
+    </main>
+    <audio id="remote-audio" autoplay></audio>
+    <script src="/static/js/shell.js"></script>
+    <script src="/stream/voice.js"></script>
+    <script src="/response/chat.js"></script>
+  </body>
+</html>
