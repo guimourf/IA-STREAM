@@ -73,6 +73,21 @@ def load_json(path: Path) -> dict:
     return data
 
 
+def load_service_token(path: Path) -> str:
+    env_token = os.environ.get("SERVICE_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    if not path.exists():
+        return ""
+    data = load_json(path)
+    token = data.get("service_token", "")
+    if token is None:
+        return ""
+    if not isinstance(token, str):
+        raise ConfigError("service_token precisa ser texto.")
+    return token.strip()
+
+
 def load_openai_api_key(path: Path) -> str:
     env_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if env_key:
@@ -180,6 +195,15 @@ def load_assistant(path: Path) -> dict:
         if noise_reduction not in {"near_field", "far_field"}:
             raise ConfigError("noise_reduction precisa ser near_field, far_field ou vazio.")
 
+    origins_raw = raw.get("cors_origins") or []
+    if not isinstance(origins_raw, list):
+        raise ConfigError("cors_origins precisa ser uma lista de origens.")
+    cors_origins: list[str] = []
+    for origin in origins_raw:
+        if not isinstance(origin, str) or not origin.strip():
+            raise ConfigError("Cada item de cors_origins precisa ser uma origem.")
+        cors_origins.append(origin.strip())
+
     return {
         "name": _text(raw.get("name") or "Assistente", 80) or "Assistente",
         "tagline": _text(raw.get("tagline"), 160),
@@ -195,6 +219,7 @@ def load_assistant(path: Path) -> dict:
         "guard": guard,
         "prompt": prompt,
         "context_fields": fields,
+        "cors_origins": cors_origins,
     }
 
 
@@ -253,12 +278,13 @@ def _normalize_field(item: object) -> dict:
 
 
 def public_assistant(assistant: dict) -> dict:
-    """O que o navegador pode ver. O prompt fica só no servidor."""
+    """Contrato para quem integra. O prompt fica só no servidor."""
     return {
         "name": assistant["name"],
         "tagline": assistant["tagline"],
         "privacy_notice": assistant["privacy_notice"],
         "context_fields": assistant["context_fields"],
+        "guard_enabled": assistant["guard"]["enabled"],
     }
 
 
@@ -277,11 +303,13 @@ def normalize_context(assistant: dict, payload: object) -> dict[str, str]:
         if raw is None:
             raw = ""
         if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
-            errors.append({"field": field["key"], "message": f"Informe {field['label'].lower()} em texto."})
+            errors.append({"field": field["key"], "message": f"{field['label']} precisa ser texto."})
             continue
         text = str(raw).strip()
         if field["required"] and not text:
-            errors.append({"field": field["key"], "message": f"Informe {field['label'].lower()} antes de iniciar."})
+            errors.append(
+                {"field": field["key"], "message": f"Preencha o campo {field['label']} antes de iniciar."}
+            )
             continue
         if not text:
             continue
@@ -305,7 +333,7 @@ def _clean_value(field: dict, text: str, errors: list[dict[str, str]]) -> str | 
         return text
     if field["type"] == "number":
         if not re.fullmatch(r"-?\d+(\.\d+)?", text):
-            errors.append({"field": field["key"], "message": f"Informe um número válido em {field['label'].lower()}."})
+            errors.append({"field": field["key"], "message": f"Informe um número válido para {field['label']}."})
             return None
         number = float(text) if "." in text else int(text)
         if field.get("min") is not None and number < field["min"]:
@@ -317,7 +345,7 @@ def _clean_value(field: dict, text: str, errors: list[dict[str, str]]) -> str | 
         return str(number)
     allowed = {option["value"] for option in field["options"]}
     if text not in allowed:
-        errors.append({"field": field["key"], "message": f"Escolha uma opção válida em {field['label'].lower()}."})
+        errors.append({"field": field["key"], "message": f"Escolha uma opção válida para {field['label']}."})
         return None
     return text
 

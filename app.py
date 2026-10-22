@@ -1,12 +1,11 @@
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from guard import evaluate_utterance
 from prompting import (
@@ -16,6 +15,7 @@ from prompting import (
     build_session_payload,
     load_assistant,
     load_openai_api_key,
+    load_service_token,
     normalize_context,
     public_assistant,
 )
@@ -31,6 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 ASSISTANT_PATH = BASE_DIR / "assistant.json"
 OPENAI_CLIENT_SECRET_URL = "https://api.openai.com/v1/realtime/client_secrets"
+WEBRTC_CALLS_URL = "https://api.openai.com/v1/realtime/calls"
 
 
 def _load_assistant_or_http() -> dict:
@@ -55,9 +56,23 @@ def _load_api_key_or_http() -> str:
         ) from exc
 
 
+def require_service_auth(request: Request) -> None:
+    try:
+        expected = load_service_token(CONFIG_PATH)
+    except ConfigError as exc:
+        logger.error("config.json inválido: %s", exc)
+        raise HTTPException(status_code=500, detail="A configuração do serviço está inválida.") from exc
+    if not expected:
+        return
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Credencial do serviço inválida.")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("Inicializando IA-STREAM...")
+    logger.info("Inicializando API IA-STREAM...")
     try:
         assistant = load_assistant(ASSISTANT_PATH)
         logger.info("Assistente carregado: %s. guarda=%s", assistant["name"], assistant["guard"]["enabled"])
@@ -67,28 +82,69 @@ async def lifespan(_app: FastAPI):
         load_openai_api_key(CONFIG_PATH)
         logger.info("Chave OpenAI carregada no backend.")
     except ConfigError as exc:
-        logger.warning("Conversa indisponível até configurar a chave: %s", exc)
+        logger.warning("Sessões indisponíveis até configurar a chave: %s", exc)
+    try:
+        if load_service_token(CONFIG_PATH):
+            logger.info("Autenticação de serviço ativa nas rotas /v1.")
+        else:
+            logger.warning("SERVICE_TOKEN não definido. As rotas /v1 aceitam qualquer cliente.")
+    except ConfigError as exc:
+        logger.error("config.json inválido na subida: %s", exc)
     yield
 
 
-app = FastAPI(title="IA-STREAM", lifespan=lifespan)
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app = FastAPI(
+    title="IA-STREAM",
+    version="1.0.0",
+    description=(
+        "API de sessão de voz para outros sistemas. "
+        "O prompt fica neste servidor. O cliente recebe um token efêmero e conversa direto com a OpenAI."
+    ),
+    lifespan=lifespan,
+)
+
+try:
+    _origins = load_assistant(ASSISTANT_PATH)["cors_origins"]
+except ConfigError:
+    _origins = []
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_service_auth)])
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request=request, name="index.html", context={})
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
 
 
-@app.get("/api/assistant")
-async def assistant_config() -> dict:
+@app.get("/")
+async def root() -> dict:
+    return {
+        "service": "IA-STREAM",
+        "docs": "/docs",
+        "health": "/health",
+        "assistant": "/v1/assistant",
+        "sessions": "/v1/realtime/sessions",
+        "guard": "/v1/guard",
+    }
+
+
+@v1.get("/assistant")
+async def assistant_contract() -> dict:
+    """Campos de contexto e aviso de privacidade. Não inclui o prompt."""
     return public_assistant(_load_assistant_or_http())
 
 
-@app.post("/api/realtime/token")
-async def create_realtime_token(request: Request) -> dict:
-    logger.info("Solicitação recebida para criar token efêmero Realtime.")
+@v1.post("/realtime/sessions")
+async def create_realtime_session(request: Request) -> dict:
+    """Cria um token efêmero da Realtime API com o prompt deste servidor."""
+    logger.info("Solicitação recebida para criar sessão Realtime.")
     assistant = _load_assistant_or_http()
     try:
         body = await request.json()
@@ -142,11 +198,12 @@ async def create_realtime_token(request: Request) -> dict:
             detail="Resposta inesperada do serviço de voz. Tente novamente.",
         ) from exc
 
-    client_secret = data.get("value") or data.get("client_secret", {}).get("value")
+    client_secret = data.get("value") or (data.get("client_secret") or {}).get("value")
     expires_at = data.get("expires_at")
-    if expires_at is None:
+    if expires_at is None and isinstance(data.get("client_secret"), dict):
         expires_at = data.get("client_secret", {}).get("expires_at")
-    session_id = data.get("session", {}).get("id") if isinstance(data.get("session"), dict) else None
+    session = data.get("session") if isinstance(data.get("session"), dict) else {}
+    session_id = session.get("id")
 
     if not client_secret:
         logger.error("Resposta sem client_secret válido.")
@@ -156,7 +213,7 @@ async def create_realtime_token(request: Request) -> dict:
         )
 
     logger.info(
-        "Token efêmero criado. session_id=%s campos_de_contexto=%s guarda=%s",
+        "Sessão criada. session_id=%s campos_de_contexto=%s guarda=%s",
         session_id,
         len(context),
         assistant["guard"]["enabled"],
@@ -166,11 +223,18 @@ async def create_realtime_token(request: Request) -> dict:
         "expires_at": expires_at,
         "session_id": session_id,
         "guard_enabled": assistant["guard"]["enabled"],
+        "webrtc": {
+            "url": WEBRTC_CALLS_URL,
+            "method": "POST",
+            "content_type": "application/sdp",
+            "data_channel": "oai-events",
+        },
     }
 
 
-@app.post("/api/guard")
+@v1.post("/guard")
 async def guard_turn(request: Request) -> dict:
+    """Classifica uma transcrição quando guard.enabled está ligado."""
     assistant = _load_assistant_or_http()
     if not assistant["guard"]["enabled"]:
         return {"allowed": True, "reason": None, "refusal_instructions": None}
@@ -181,5 +245,7 @@ async def guard_turn(request: Request) -> dict:
     text = body.get("text") if isinstance(body, dict) else None
     if not isinstance(text, str):
         raise HTTPException(status_code=400, detail="Envie o texto da fala.")
-    decision = await evaluate_utterance(assistant, text, _load_api_key_or_http())
-    return decision
+    return await evaluate_utterance(assistant, text, _load_api_key_or_http())
+
+
+app.include_router(v1)
