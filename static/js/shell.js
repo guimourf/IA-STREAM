@@ -1,8 +1,9 @@
-// Casca da página de exemplo. Os dois modos ficam em stream/voice.js e response/chat.js.
+// Casca da página de exemplo. Os modos ficam em stream/voice.js, response/chat.js e hybrid/listen.js.
 
 const modeHelp = {
   stream: "A voz e o texto chegam aos poucos, direto da OpenAI. O código está na pasta stream/.",
   response: "A mensagem vai ao servidor e a resposta volta inteira, num único JSON. O código está na pasta response/.",
+  hybrid: "Você fala. A resposta volta inteira, em texto e em voz. O código está na pasta hybrid/.",
 };
 
 const formEl = document.querySelector("#context-form");
@@ -96,13 +97,21 @@ function renderAssistant(assistant) {
 
 function selectMode(mode) {
   if (mode !== "stream" && window.streamExample) window.streamExample.stop();
+  if (mode !== "hybrid" && window.hybridExample) window.hybridExample.stop();
   example.mode = mode;
   document.querySelectorAll("[data-mode]").forEach((button) => {
     button.setAttribute("aria-selected", String(button.dataset.mode === mode));
   });
   document.querySelector("#panel-stream").hidden = mode !== "stream";
   document.querySelector("#panel-response").hidden = mode !== "response";
-  document.querySelector("#mode-help").textContent = modeHelp[mode];
+  document.querySelector("#panel-hybrid").hidden = mode !== "hybrid";
+  document.querySelector("#mode-help").textContent = modeHelp[mode] || "";
+  if (mode === "response") {
+    document.querySelector("#status").dataset.state = "idle";
+    document.querySelector("#status").textContent = "Aguardando";
+  }
+  example.showFormError("");
+  example.applyFieldErrors([]);
   example.showContext(true);
 }
 

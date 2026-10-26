@@ -7,9 +7,10 @@ import app as app_module
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict) -> None:
+    def __init__(self, status_code: int, payload: dict | None = None, content: bytes = b"") -> None:
         self.status_code = status_code
-        self._payload = payload
+        self._payload = payload if payload is not None else {}
+        self.content = content
 
     def json(self) -> dict:
         return self._payload
@@ -17,6 +18,7 @@ class FakeResponse:
 
 class FakeClient:
     last_json = None
+    last_url = None
     payload = {
         "value": "ek_test",
         "expires_at": 123,
@@ -34,6 +36,9 @@ class FakeClient:
 
     async def post(self, url, headers=None, json=None):
         FakeClient.last_json = json
+        FakeClient.last_url = url
+        if url.endswith("/audio/speech"):
+            return FakeResponse(200, content=b"ID3fake-mp3")
         if url.endswith("/responses"):
             return FakeResponse(
                 200,
@@ -55,6 +60,7 @@ def isolated_config(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(app_module, "CONFIG_PATH", tmp_path / "config.json")
     FakeClient.last_json = None
+    FakeClient.last_url = None
 
 
 def test_example_page_offers_both_modes_without_the_prompt():
@@ -63,14 +69,21 @@ def test_example_page_offers_both_modes_without_the_prompt():
     stream_js = client.get("/stream/voice.js")
     response_js = client.get("/response/chat.js")
 
+    hybrid_js = client.get("/hybrid/listen.js")
+
     assert page.status_code == 200
     assert 'data-mode="stream"' in page.text
     assert 'data-mode="response"' in page.text
+    assert 'data-mode="hybrid"' in page.text
     assert "Substitua este bloco" not in page.text
     assert stream_js.status_code == 200
     assert "response.output_audio_transcript.delta" in stream_js.text
     assert response_js.status_code == 200
     assert "/api/response" in response_js.text
+    assert hybrid_js.status_code == 200
+    assert "transcribe_only" in hybrid_js.text
+    assert "/api/speech" in hybrid_js.text
+    assert "(() => {" in hybrid_js.text
 
 
 def test_stream_session_validates_context_before_calling_openai(monkeypatch):
@@ -87,9 +100,17 @@ def test_stream_session_validates_context_before_calling_openai(monkeypatch):
     assert created.status_code == 200
     payload = created.json()
     assert payload["client_secret"] == "ek_test"
+    assert payload["transcribe_only"] is False
     assert payload["webrtc"]["data_channel"] == "oai-events"
     assert "nome = Ana" in FakeClient.last_json["session"]["instructions"]
     assert FakeClient.last_json["session"]["max_output_tokens"] == 300
+    assert FakeClient.last_json["session"]["audio"]["input"]["turn_detection"]["create_response"] is True
+
+    hybrid = client.post("/api/session", json={"context": {"nome": "Ana"}, "transcribe_only": True})
+    assert hybrid.status_code == 200
+    assert hybrid.json()["transcribe_only"] is True
+    assert FakeClient.last_json["session"]["audio"]["input"]["turn_detection"]["create_response"] is False
+    assert "Não responda" in FakeClient.last_json["session"]["instructions"]
 
 
 def test_response_returns_the_whole_text(monkeypatch):
@@ -112,11 +133,29 @@ def test_response_returns_the_whole_text(monkeypatch):
     assert created.json()["text"] == "Olá, Ana."
     sent = FakeClient.last_json
     assert sent["stream"] is False
-    assert sent["model"] == "gpt-6-astra"
+    assert sent["model"] == "gpt-4o-mini"
     assert sent["max_output_tokens"] == 300
     assert sent["input"][-1] == {"role": "user", "content": "Oi"}
     assert "nome = Ana" in sent["instructions"]
     assert "Substitua este bloco" not in json.dumps(created.json(), ensure_ascii=False)
+
+
+def test_speech_returns_the_audio_of_the_complete_text(monkeypatch):
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    client = TestClient(app_module.app)
+
+    empty = client.post("/api/speech", json={"text": "   "})
+    assert empty.status_code == 400
+
+    spoken = client.post("/api/speech", json={"text": "Olá, Ana."})
+    assert spoken.status_code == 200
+    assert spoken.content == b"ID3fake-mp3"
+    assert spoken.headers["content-type"].startswith("audio/mpeg")
+    assert FakeClient.last_json["model"] == "tts-1"
+    assert FakeClient.last_json["voice"] == "nova"
+    assert FakeClient.last_json["input"] == "Olá, Ana."
+    assert FakeClient.last_url.endswith("/audio/speech")
 
 
 def test_missing_key_is_a_controlled_error():
@@ -124,3 +163,6 @@ def test_missing_key_is_a_controlled_error():
     response = client.post("/api/response", json={"context": {"nome": "Ana"}, "message": "Oi"})
     assert response.status_code == 503
     assert "sk-" not in response.text
+    speech = client.post("/api/speech", json={"text": "Oi"})
+    assert speech.status_code == 503
+    assert "sk-" not in speech.text

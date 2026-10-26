@@ -1,7 +1,8 @@
-"""Página de exemplo com dois formatos separados.
+"""Página de exemplo com três formatos separados.
 
 Stream: a pasta stream/ abre a voz por WebRTC e a resposta chega aos poucos.
 Response: a pasta response/ envia uma mensagem e recebe o texto inteiro.
+Híbrido: a pasta hybrid/ ouve a voz, pede o texto inteiro e depois fala esse texto.
 """
 
 import logging
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -25,6 +26,7 @@ from prompting import (
     normalize_context,
     public_assistant,
 )
+from hybrid.speech import SPEECH_URL, SpeechInputError, build_speech_payload
 from response.complete import (
     RESPONSES_URL,
     ResponseInputError,
@@ -93,7 +95,7 @@ def _context_from(body: dict, assistant: dict) -> dict[str, str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("Exemplos Stream e Response...")
+    logger.info("Exemplos Stream, Response e Voz + texto...")
     try:
         assistant = load_assistant(ASSISTANT_PATH)
         logger.info("Assistente carregado: %s", assistant["name"])
@@ -112,6 +114,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.mount("/stream", StaticFiles(directory=str(BASE_DIR / "stream")), name="stream_files")
 app.mount("/response", StaticFiles(directory=str(BASE_DIR / "response")), name="response_files")
+app.mount("/hybrid", StaticFiles(directory=str(BASE_DIR / "hybrid")), name="hybrid_files")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -127,12 +130,14 @@ async def assistant_for_example() -> dict:
 
 @app.post("/api/session")
 async def create_session(request: Request) -> dict:
-    """Exemplo Stream: cria o token da sessão de voz."""
-    logger.info("Exemplo Stream pediu uma sessão.")
+    """Cria o token da sessão de voz. Com transcribe_only, a sessão só ouve."""
     assistant = _load_assistant_or_http()
-    context = _context_from(await _json_body(request), assistant)
+    body = await _json_body(request)
+    transcribe_only = bool(body.get("transcribe_only"))
+    logger.info("Sessão de voz pedida. transcribe_only=%s", transcribe_only)
+    context = _context_from(body, assistant)
     instructions = build_instructions(assistant, context)
-    payload = build_session_payload(assistant, instructions)
+    payload = build_session_payload(assistant, instructions, transcribe_only=transcribe_only)
     api_key = _load_api_key_or_http()
 
     try:
@@ -177,12 +182,18 @@ async def create_session(request: Request) -> dict:
             detail="Resposta inesperada do serviço de voz. Tente novamente.",
         )
 
-    logger.info("Sessão Stream criada. session_id=%s campos=%s", session.get("id"), len(context))
+    logger.info(
+        "Sessão de voz criada. session_id=%s transcribe_only=%s campos=%s",
+        session.get("id"),
+        transcribe_only,
+        len(context),
+    )
     return {
         "client_secret": client_secret,
         "expires_at": expires_at,
         "session_id": session.get("id"),
         "guard_enabled": assistant["guard"]["enabled"],
+        "transcribe_only": transcribe_only,
         "webrtc": webrtc_client_hint(),
     }
 
@@ -242,12 +253,57 @@ async def create_complete_response(request: Request) -> dict:
     return {"text": text, "response_id": data.get("id") if isinstance(data, dict) else None}
 
 
+@app.post("/api/speech")
+async def create_speech(request: Request) -> Response:
+    """Exemplo híbrido: fala o texto inteiro que já veio do Response."""
+    logger.info("Exemplo híbrido pediu a voz da resposta.")
+    assistant = _load_assistant_or_http()
+    body = await _json_body(request)
+    text = body.get("text")
+    if not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="Envie o texto para falar.")
+    try:
+        payload = build_speech_payload(assistant, text)
+    except SpeechInputError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    api_key = _load_api_key_or_http()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                SPEECH_URL,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+    except httpx.RequestError as exc:
+        logger.exception("Erro de rede ao pedir a voz da resposta.")
+        raise HTTPException(
+            status_code=502,
+            detail="Falha de conexão com o serviço de voz. Tente novamente.",
+        ) from exc
+
+    if response.status_code >= 400:
+        logger.error("OpenAI retornou erro na síntese de voz: status=%s", response.status_code)
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível falar a resposta agora. Tente novamente em instantes.",
+        )
+
+    audio = response.content
+    if not audio:
+        logger.error("Síntese de voz sem áudio.")
+        raise HTTPException(status_code=502, detail="A voz veio vazia. Tente novamente.")
+
+    logger.info("Voz da resposta criada. bytes=%s", len(audio))
+    return Response(content=audio, media_type="audio/mpeg")
+
+
 @app.post("/api/guard")
 async def guard_turn(request: Request) -> dict:
     """Usado pelo exemplo Stream só quando guard.enabled está ligado."""
     assistant = _load_assistant_or_http()
     if not assistant["guard"]["enabled"]:
-        return {"allowed": True, "reason": None, "refusal_instructions": None}
+        return {"allowed": True, "reason": None, "refusal_instructions": None, "refusal_text": None}
     body = await _json_body(request)
     text = body.get("text")
     if not isinstance(text, str):

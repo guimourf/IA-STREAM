@@ -108,11 +108,12 @@ button:disabled { opacity: 0.7; cursor: wait; }
 .primary { background: var(--teal); color: white; }
 .secondary { background: transparent; border: 1px solid var(--line); color: var(--ink); }
 
-.modes { display: flex; gap: 8px; }
-.modes button { margin: 0; background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.modes { display: flex; gap: 8px; flex-wrap: wrap; }
+.modes button { margin: 0; flex: 1; min-width: 7.5rem; background: transparent; border: 1px solid var(--line); color: var(--ink); }
 .modes button[aria-selected="true"] { background: var(--teal); color: white; border-color: var(--teal); }
 
 .conversation { min-height: 52vh; display: flex; flex-direction: column; }
+.conversation[hidden] { display: none; }
 .transcript {
   min-height: 180px;
   max-height: 42vh;

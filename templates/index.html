@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Exemplos Stream e Response</title>
+    <title>Exemplos Stream, Response e Voz + texto</title>
     <link rel="stylesheet" href="/static/css/app.css" />
   </head>
   <body>
@@ -21,6 +21,7 @@
         <div class="modes" role="tablist" aria-label="Formato da resposta">
           <button type="button" data-mode="stream" aria-selected="true">Stream</button>
           <button type="button" data-mode="response" aria-selected="false">Response</button>
+          <button type="button" data-mode="hybrid" aria-selected="false">Voz + texto</button>
         </div>
         <p id="mode-help" class="help"></p>
       </section>
@@ -48,10 +49,22 @@
         <button id="response-send" class="primary" type="button">Enviar</button>
         <button id="response-clear" class="secondary" type="button">Limpar conversa</button>
       </section>
+
+      <section id="panel-hybrid" class="panel" hidden>
+        <button id="hybrid-start" class="primary" type="button">Iniciar conversa</button>
+        <div id="hybrid-conversation" class="conversation" hidden>
+          <div id="hybrid-transcript" class="transcript" aria-live="polite"></div>
+          <p id="hybrid-error" class="error" role="alert" hidden></p>
+          <button id="hybrid-stop" class="secondary" type="button">Encerrar conversa</button>
+        </div>
+      </section>
     </main>
     <audio id="remote-audio" autoplay></audio>
+    <audio id="hybrid-remote" autoplay muted></audio>
+    <audio id="hybrid-audio" autoplay></audio>
     <script src="/static/js/shell.js"></script>
     <script src="/stream/voice.js"></script>
     <script src="/response/chat.js"></script>
+    <script src="/hybrid/listen.js"></script>
   </body>
 </html>

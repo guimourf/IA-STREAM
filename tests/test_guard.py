@@ -19,6 +19,7 @@ def test_moderation_blocks_before_scope():
     )
     assert decision["allowed"] is False
     assert decision["reason"] == "moderation"
+    assert decision["refusal_text"] == "Não posso ajudar com esse pedido."
     assert "Não posso ajudar com esse pedido." in decision["refusal_instructions"]
 
 
@@ -30,6 +31,7 @@ def test_scope_block_and_fail_open():
         moderation_refusal="Não.",
     )
     assert blocked["reason"] == "scope"
+    assert blocked["refusal_text"] == "Desculpe, isso está fora."
     assert "Desculpe, isso está fora." in blocked["refusal_instructions"]
     assert "\n\n" not in refusal_instructions("linha\n\nquebrada")
 
@@ -41,3 +43,4 @@ def test_scope_block_and_fail_open():
     )
     assert open_decision["allowed"] is True
     assert open_decision["refusal_instructions"] is None
+    assert open_decision["refusal_text"] is None

@@ -64,18 +64,22 @@ def decide(
     moderation_refusal: str,
 ) -> dict:
     if moderation_flagged:
+        text = " ".join(moderation_refusal.split())
         return {
             "allowed": False,
             "reason": "moderation",
             "refusal_instructions": refusal_instructions(moderation_refusal),
+            "refusal_text": text,
         }
     if classifier == "fora":
+        text = " ".join(refusal_message.split())
         return {
             "allowed": False,
             "reason": "scope",
             "refusal_instructions": refusal_instructions(refusal_message),
+            "refusal_text": text,
         }
-    return {"allowed": True, "reason": None, "refusal_instructions": None}
+    return {"allowed": True, "reason": None, "refusal_instructions": None, "refusal_text": None}
 
 
 async def _post_json(client: httpx.AsyncClient, url: str, api_key: str, payload: dict) -> dict | None:

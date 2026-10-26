@@ -60,7 +60,15 @@ def test_session_limits_tokens_and_guard_disables_auto_response():
     assert session["max_output_tokens"] == 300
     assert session["model"] == "gpt-realtime-2.1"
     assert session["audio"]["output"]["voice"] == "marin"
+    assert assistant["speech_model"] == "tts-1"
+    assert assistant["speech_voice"] == "nova"
     assert session["audio"]["input"]["turn_detection"]["create_response"] is True
+
+    transcribed = build_session_payload(assistant, "oi", transcribe_only=True)
+    assert transcribed["session"]["audio"]["input"]["turn_detection"]["create_response"] is False
+    assert transcribed["session"]["instructions"] == (
+        "Você apenas transcreve o áudio. Não responda, não fale e não gere conteúdo."
+    )
 
     assistant["guard"] = dict(assistant["guard"], enabled=True)
     guarded = build_session_payload(assistant, "oi")

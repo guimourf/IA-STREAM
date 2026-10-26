@@ -153,6 +153,9 @@ def load_assistant(path: Path) -> dict:
     voice = _text(raw.get("voice") or "marin", 64) or "marin"
     if " " in voice:
         raise ConfigError("voice inválida.")
+    speech_voice = _text(raw.get("speech_voice") or "nova", 64) or "nova"
+    if " " in speech_voice:
+        raise ConfigError("speech_voice inválida.")
 
     max_tokens = raw.get("max_output_tokens", 300)
     if max_tokens in (None, "", "inf"):
@@ -187,6 +190,8 @@ def load_assistant(path: Path) -> dict:
         "model": _text(raw.get("model") or "gpt-realtime-2.1", 64) or "gpt-realtime-2.1",
         "response_model": _text(raw.get("response_model") or "gpt-6-astra", 64) or "gpt-6-astra",
         "voice": voice,
+        "speech_model": _text(raw.get("speech_model") or "tts-1", 64) or "tts-1",
+        "speech_voice": speech_voice,
         "transcription_model": _text(raw.get("transcription_model") or "gpt-4o-mini-transcribe", 64)
         or "gpt-4o-mini-transcribe",
         "transcription_language": _text(raw.get("transcription_language") or "pt", 16),
@@ -346,9 +351,9 @@ def build_instructions(assistant: dict, context: dict[str, str]) -> str:
     return "\n\n".join(parts)
 
 
-def build_session_payload(assistant: dict, instructions: str) -> dict:
+def build_session_payload(assistant: dict, instructions: str, *, transcribe_only: bool = False) -> dict:
     turn = dict(assistant["turn_detection"])
-    if assistant["guard"]["enabled"]:
+    if assistant["guard"]["enabled"] or transcribe_only:
         turn["create_response"] = False
     audio_input: dict = {"turn_detection": turn}
     if assistant["noise_reduction"]:
@@ -357,11 +362,16 @@ def build_session_payload(assistant: dict, instructions: str) -> dict:
     if assistant["transcription_language"]:
         transcription["language"] = assistant["transcription_language"]
     audio_input["transcription"] = transcription
+    session_instructions = instructions
+    if transcribe_only:
+        session_instructions = (
+            "Você apenas transcreve o áudio. Não responda, não fale e não gere conteúdo."
+        )
     return {
         "session": {
             "type": "realtime",
             "model": assistant["model"],
-            "instructions": instructions,
+            "instructions": session_instructions,
             "max_output_tokens": assistant["max_output_tokens"],
             "audio": {
                 "input": audio_input,
